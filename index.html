@@ -284,10 +284,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
     <div class="error-msg" id="login-error">Invalid username or password</div>
     <button class="btn btn-primary btn-full" style="margin-top:20px" onclick="doLogin()">Sign In →</button>
     <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--muted)">Default admin: admin / admin123</p>
-    <div class="form-group" style="margin-top:16px">
-      <label>Apps Script URL (required)</label>
-      <input type="text" id="api-url" placeholder="https://script.google.com/macros/s/.../exec" style="font-size:11px">
-    </div>
+    <!-- Apps Script URL is configured inside this file, not shown on login screen -->
   </div>
 </div>
 
@@ -655,7 +652,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 // ============================================================
 // CONFIG & STATE
 // ============================================================
-let API_URL = '';
+const API_URL = 'https://script.google.com/macros/s/AKfycbw-YhIJiJUmWgdqS6PPHOzUjYEjPOtPElYSXbEVQtSOcJFslSvMlmQCq2iYc3LvhEe8/exec';
 let currentUser = null;
 let allTasks = [];
 let allUsers = [];
@@ -679,19 +676,25 @@ async function api(action, payload = {}) {
 async function doLogin() {
   const username = document.getElementById('login-user').value.trim();
   const password = document.getElementById('login-pass').value.trim();
-  API_URL = document.getElementById('api-url').value.trim();
+
   document.getElementById('login-error').style.display = 'none';
-  if (!API_URL) { alert('Please enter your Apps Script URL'); return; }
-  if (!username || !password) { showError('login-error', 'Fill in all fields'); return; }
+
+  if (!username || !password) {
+    showError('login-error', 'Fill in all fields');
+    return;
+  }
+
   try {
     const r = await api('login', {username, password});
     if (r.success) {
       currentUser = r.user;
       startApp();
     } else {
-      document.getElementById('login-error').style.display = 'block';
+      showError('login-error', r.message || 'Invalid username or password');
     }
-  } catch(e) { alert('Connection error. Check your Apps Script URL.'); }
+  } catch(e) {
+    showError('login-error', 'Connection error. Please contact admin.');
+  }
 }
 
 function showError(id, msg) {
@@ -1065,17 +1068,32 @@ function openDeptModal(id) {
 async function saveDept() {
   const name = document.getElementById('dept-name').value.trim();
   if (!name) { alert('Name required'); return; }
+
   const id = document.getElementById('dept-edit-id').value;
   const headUserId = document.getElementById('dept-head-select').value;
   let r;
-  if (id) r = await api('updateDept', {id, name, headUserId});
-  else r = await api('createDept', {name, headUserId});
-  if (r.success) {
-    if (headUserId && !id) {
+
+  if (id) {
+    r = await api('updateDept', {id, name, headUserId});
+    if (r.success && headUserId) {
+      await api('updateUser', {id: headUserId, role: 'dept_head', department: id});
+    }
+  } else {
+    r = await api('createDept', {name, headUserId});
+    if (r.success && headUserId) {
       await api('updateUser', {id: headUserId, role: 'dept_head', department: r.id});
     }
-    closeModal('modal-dept'); showToast('Department saved!');
-    await loadDepts(); loadDeptsTable();
+  }
+
+  if (r.success) {
+    closeModal('modal-dept');
+    showToast('Department saved!');
+    await loadDepts();
+    await loadUsers();
+    populateDeptFilters();
+    loadDeptsTable();
+  } else {
+    alert(r.message || 'Department not saved');
   }
 }
 
